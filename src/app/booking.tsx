@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import type { ComponentProps } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { router, useLocalSearchParams } from 'expo-router';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
 
 import { PlacePicker } from '../components/PlacePicker';
 import {
@@ -46,7 +46,7 @@ type Errors = Record<string, string>;
 
 export default function BookingScreen() {
   const params = useLocalSearchParams<{ service?: string }>();
-  const { createRequest } = useRequests();
+  const { createRequest, mapPick, setMapPick } = useRequests();
 
   const [step, setStep] = useState(0);
   const [errors, setErrors] = useState<Errors>({});
@@ -65,6 +65,37 @@ export default function BookingScreen() {
   const [dropoff, setDropoff] = useState<TripPoint>(EMPTY_POINT);
   const [pickupOldWard, setPickupOldWard] = useState('');
   const [dropoffOldWard, setDropoffOldWard] = useState('');
+
+  // Nhận điểm vừa ghim trên bản đồ khi quay lại màn đặt xe
+  useFocusEffect(
+    useCallback(() => {
+      if (!mapPick) return;
+      if (mapPick.target === 'pickup') setPickup(mapPick.point);
+      else setDropoff(mapPick.point);
+      setMapPick(null);
+    }, [mapPick, setMapPick]),
+  );
+
+  const openMapPick = (target: 'pickup' | 'dropoff') => {
+    const self = target === 'pickup' ? pickup : dropoff;
+    const other = target === 'pickup' ? dropoff : pickup;
+    router.push({
+      pathname: '/map-pick',
+      params: {
+        target,
+        ...(self.lat != null && self.lng != null
+          ? { lat: String(self.lat), lng: String(self.lng) }
+          : {}),
+        ...(other.lat != null && other.lng != null
+          ? {
+              otherLat: String(other.lat),
+              otherLng: String(other.lng),
+              ...(other.label.trim() ? { otherLabel: other.label.trim() } : {}),
+            }
+          : {}),
+      },
+    });
+  };
 
   const [passengers, setPassengers] = useState(1);
   const [customerName, setCustomerName] = useState('');
@@ -318,6 +349,7 @@ export default function BookingScreen() {
               onChange={setPickup}
               placeholder="VD: Bến xe Vinh, sân bay..."
               error={errors.pickup}
+              onPickOnMap={() => openMapPick('pickup')}
             />
             <Field
               label="Xã / phường cũ (nếu địa danh đã sáp nhập)"
@@ -335,6 +367,7 @@ export default function BookingScreen() {
               onChange={setDropoff}
               placeholder="VD: Cửa Lò, Yên Thành..."
               error={errors.dropoff}
+              onPickOnMap={() => openMapPick('dropoff')}
             />
             <Field
               label="Xã / phường cũ (nếu địa danh đã sáp nhập)"

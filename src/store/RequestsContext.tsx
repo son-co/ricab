@@ -9,6 +9,7 @@ import type {
   BookingRequest,
   Quote,
   TimelineEvent,
+  TripPoint,
 } from '../types';
 import { formatVnd } from '../utils/format';
 
@@ -24,6 +25,13 @@ interface PersistedState {
 
 interface State extends PersistedState {
   hydrated: boolean;
+  /** Điểm vừa chọn trên bản đồ, đang chờ màn đặt xe nhận. */
+  mapPick: MapPick | null;
+}
+
+export interface MapPick {
+  target: 'pickup' | 'dropoff';
+  point: TripPoint;
 }
 
 type Action =
@@ -37,13 +45,15 @@ type Action =
       notification?: AppNotification;
     }
   | { type: 'read'; audience: Audience }
-  | { type: 'role'; role: Role };
+  | { type: 'role'; role: Role }
+  | { type: 'mapPick'; pick: MapPick | null };
 
 const initialState: State = {
   requests: INITIAL_REQUESTS,
   notifications: INITIAL_NOTIFICATIONS,
   role: 'customer',
   hydrated: false,
+  mapPick: null,
 };
 
 function reducer(state: State, action: Action): State {
@@ -89,6 +99,9 @@ function reducer(state: State, action: Action): State {
     case 'role':
       return { ...state, role: action.role };
 
+    case 'mapPick':
+      return { ...state, mapPick: action.pick };
+
     default:
       return state;
   }
@@ -132,6 +145,8 @@ interface RequestsContextValue extends PersistedState {
   notificationsFor: (audience: Audience) => AppNotification[];
   markRead: (audience: Audience) => void;
   setRole: (role: Role) => void;
+  mapPick: MapPick | null;
+  setMapPick: (pick: MapPick | null) => void;
   createRequest: (input: NewRequestInput) => BookingRequest;
   sendQuote: (id: string, quote: Quote) => void;
   acceptQuote: (id: string) => void;
@@ -388,6 +403,7 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
 
   const markRead = useCallback((audience: Audience) => dispatch({ type: 'read', audience }), []);
   const setRole = useCallback((role: Role) => dispatch({ type: 'role', role }), []);
+  const setMapPick = useCallback((pick: MapPick | null) => dispatch({ type: 'mapPick', pick }), []);
 
   const resetDemo = useCallback(() => {
     dispatch({
@@ -412,6 +428,8 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
       notificationsFor: (audience: Audience) => state.notifications.filter((n) => n.audience === audience),
       markRead,
       setRole,
+      mapPick: state.mapPick,
+      setMapPick,
       createRequest,
       sendQuote,
       acceptQuote,
@@ -427,8 +445,10 @@ export function RequestsProvider({ children }: { children: ReactNode }) {
     state.notifications,
     state.role,
     state.hydrated,
+    state.mapPick,
     markRead,
     setRole,
+    setMapPick,
     createRequest,
     sendQuote,
     acceptQuote,

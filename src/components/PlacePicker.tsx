@@ -13,6 +13,8 @@ interface PlacePickerProps {
   onChange: (point: TripPoint) => void;
   placeholder?: string;
   error?: string;
+  /** Mở màn chọn điểm trên bản đồ (map-pick). */
+  onPickOnMap?: () => void;
 }
 
 const normalize = (s: string) =>
@@ -22,7 +24,15 @@ const normalize = (s: string) =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/đ/g, 'd');
 
-export function PlacePicker({ label, icon, value, onChange, placeholder, error }: PlacePickerProps) {
+export function PlacePicker({
+  label,
+  icon,
+  value,
+  onChange,
+  placeholder,
+  error,
+  onPickOnMap,
+}: PlacePickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
 
@@ -141,10 +151,26 @@ export function PlacePicker({ label, icon, value, onChange, placeholder, error }
             }
           />
 
-          <View style={styles.mapHint}>
-            <Ionicons name="map-outline" size={16} color={colors.textFaint} />
-            <Text style={styles.mapHintText}>Chọn vị trí trên bản đồ sẽ mở ở phiên bản tiếp theo.</Text>
-          </View>
+          {onPickOnMap ? (
+            <Pressable
+              style={({ pressed }) => [styles.mapRow, pressed && styles.mapRowPressed]}
+              onPress={() => {
+                setOpen(false);
+                onPickOnMap();
+              }}
+            >
+              <View style={styles.mapRowIcon}>
+                <Ionicons name="map" size={20} color={colors.primary} />
+              </View>
+              <View style={styles.mapRowBody}>
+                <Text style={styles.mapRowTitle}>Chọn vị trí trên bản đồ</Text>
+                <Text style={styles.mapRowHint}>
+                  Di chuyển bản đồ để ghim chính xác {icon === 'location' ? 'điểm đón' : 'điểm đến'}
+                </Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color={colors.textFaint} />
+            </Pressable>
+          ) : null}
         </View>
       </Modal>
     </View>
@@ -229,6 +255,27 @@ const styles = StyleSheet.create({
   itemName: { fontSize: fontSize.md, fontWeight: '700', color: colors.text },
   itemAddress: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
   itemOld: { fontSize: fontSize.xs, color: colors.warning, marginTop: 2, fontWeight: '600' },
-  mapHint: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space(2), paddingVertical: space(3) },
-  mapHintText: { fontSize: fontSize.xs, color: colors.textFaint },
+  mapRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: colors.primarySoft,
+    borderRadius: radius.md,
+    borderWidth: 1.5,
+    borderColor: colors.border,
+    padding: space(3),
+    marginTop: space(2),
+  },
+  mapRowPressed: { opacity: 0.8 },
+  mapRowIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: space(3),
+  },
+  mapRowBody: { flex: 1 },
+  mapRowTitle: { fontSize: fontSize.md, fontWeight: '800', color: colors.primaryDark },
+  mapRowHint: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
 });
