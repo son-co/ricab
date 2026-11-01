@@ -1,6 +1,6 @@
 # Đi cùng bạn — Ứng dụng đặt dịch vụ di chuyển & giao nhận
 
-App React Native (Expo SDK 58, TypeScript, Expo Router) theo mô hình **trung gian giữa khách hàng và đại lý**: khách nhập yêu cầu → hệ thống báo đại lý → đại lý tìm xe và gửi báo giá → khách chấp nhận/từ chối → đại lý xác nhận chuyến.
+App React Native (Expo SDK 57, TypeScript, Expo Router) theo mô hình **trung gian giữa khách hàng và đại lý**: khách nhập yêu cầu → hệ thống báo đại lý → đại lý tìm xe và gửi báo giá → khách chấp nhận/từ chối → đại lý xác nhận chuyến.
 
 ## Chạy dự án
 
@@ -18,11 +18,11 @@ src/
   app/                  # Expo Router — mỗi file là một màn hình
     (tabs)/             # Trang chủ, Khám phá, Lịch sử, Tài khoản
     booking.tsx         # Form đặt xe 4 bước
-    map-pick.tsx        # Chọn điểm đón/đến trên bản đồ thật
+    map-pick.tsx        # Chọn điểm đón/đến trên bản đồ (Leaflet/OSM)
     request/[id].tsx    # Chi tiết yêu cầu + báo giá (khách)
     agency/             # Khu vực đại lý: danh sách + chi tiết/gửi báo giá
     notifications.tsx   # Thông báo theo vai trò
-  components/           # UI dùng chung, bộ chọn địa điểm, card yêu cầu
+  components/           # UI dùng chung, bộ chọn địa điểm, LeafletMap, card yêu cầu
   store/               # RequestsContext: reducer + lưu AsyncStorage
   data/mock.ts         # Dịch vụ, địa điểm (Nghệ An), dữ liệu mẫu
   utils/               # Tính khoảng cách, ước tính giá, định dạng
@@ -44,11 +44,10 @@ src/
 
 Bước "Hành trình" của form đặt xe cho phép chọn điểm đón/đến bằng 2 cách: danh sách gợi ý (offline) hoặc **ghim trên bản đồ thật**:
 
-- `react-native-maps` (SDK 58 hỗ trợ trong Expo Go — không cần cấu hình thêm khi test).
-- Ô tìm kiếm địa danh + địa chỉ hiển thị từ **Nominatim / OpenStreetMap** (không cần API key, cần mạng).
+- **Leaflet + OpenStreetMap** chạy trong WebView (`react-native-webview`, có sẵn trong Expo Go) — không cần API key, hoạt động cả trong Expo Go lẫn bản build store.
+  > Lý do không dùng `react-native-maps`/Google Maps: từ SDK 53, **Expo Go đã gỡ key Google Maps** nên tile tải về toàn màu đen (chỉ còn logo) — xem [react-native-maps#5888](https://github.com/react-native-maps/react-native-maps/issues/5888). Muốn quay lại Google Maps phải tạo development build riêng + API key.
+- Ô tìm kiếm địa danh + địa chỉ hiển thị từ **Nominatim (OpenStreetMap)**, tự động chuyển sang **Photon (Komoot)** khi bị 403/429 — cả hai đều không cần API key, cần mạng.
 - Di chuyển bản đồ để ghim toạ độ → tự tra địa chỉ → dùng cho tính khoảng cách & giá dự kiến.
-
-Lưu ý khi build bản store (EAS Build): Google Maps trên Android cần API key (bắt đầu từ SDK 53 Expo Go không còn đóng gói key Google Maps cho bản build riêng) — làm theo https://docs.expo.dev/versions/v58.0.0/sdk/map-view/ (plugin `react-native-maps`).
 
 ## Giai đoạn sau (chưa làm trong MVP)
 

@@ -10,75 +10,24 @@ import {
   View,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import MapView, { Marker } from 'react-native-maps';
-import type { Region } from 'react-native-maps';
 import { router, useLocalSearchParams } from 'expo-router';
 
+import { LeafletMap } from '../components/LeafletMap';
+import type { LeafletMapHandle, MapMarker } from '../components/LeafletMap';
 import { AppButton, AppHeader, InlineNotice } from '../components/ui';
 import { useRequests } from '../store/RequestsContext';
+import { reverseGeocode as fetchAddress, searchPlaces } from '../utils/geocode';
+import type { PlaceResult } from '../utils/geocode';
 import type { TripPoint } from '../types';
 import { colors, fontSize, radius, shadow, space } from '../theme';
 
 /** Tâm Nghệ An — vùng mặc định khi chưa có điểm nào được chọn. */
-const NGHE_AN: Region = {
-  latitude: 18.6796,
-  longitude: 105.6813,
-  latitudeDelta: 0.09,
-  longitudeDelta: 0.09,
-};
-
-/** Nominatim (OpenStreetMap) — không cần API key. Chính sách: tối đa ~1 yêu cầu/giây. */
-const NOMINATIM = 'https://nominatim.openstreetmap.org';
-const NOMINATIM_HEADERS: Record<string, string> = {
-  Accept: 'application/json',
-  'Accept-Language': 'vi',
-  'User-Agent': 'DiCungBan/1.0',
-};
-
-interface NominatimReverse {
-  display_name?: string;
-  address?: Record<string, unknown>;
-  error?: unknown;
-}
-
-interface NominatimSearchItem {
-  place_id: number;
-  lat: string;
-  lon: string;
-  display_name: string;
-}
-
-interface SearchItem {
-  id: string;
-  label: string;
-  address: string;
-  lat: number;
-  lng: number;
-}
+const NGHE_AN = { lat: 18.6796, lng: 105.6813 };
 
 type AddrState =
   | { status: 'loading' }
   | { status: 'ok'; lat: number; lng: number; label: string; address: string }
   | { status: 'error' };
-
-const str = (v: unknown): string | undefined =>
-  typeof v === 'string' && v.trim() ? v.trim() : undefined;
-
-/** Tên ngắn (phường/xã/đường...) lấy từ kết quả Nominatim. */
-function buildLabel(displayName: string, address?: Record<string, unknown>): string {
-  const specific =
-    (address &&
-      (str(address.road) ??
-        str(address.neighbourhood) ??
-        str(address.hamlet) ??
-        str(address.village) ??
-        str(address.town) ??
-        str(address.suburb) ??
-        str(address.city) ??
-        str(address.county))) ??
-    undefined;
-  return specific ?? displayName.split(',')[0]?.trim() ?? 'Vị trí đã chọn';
-}
 
 const parseNum = (v?: string): number | undefined => {
   if (v == null || v === '') return undefined;
@@ -103,31 +52,42 @@ export default function MapPickScreen() {
   const selfLng = parseNum(params.lng);
   const otherLat = parseNum(params.otherLat);
   const otherLng = parseNum(params.otherLng);
-  const otherLabel = params.otherLabel;
+  const otherLabel = params.otherLabel?.trim();
 
-  const initialRegion = useMemo<Region>(
+  // useMemo để identity ổn định — nếu tạo object mới mỗi render thì effect địa chỉ sẽ lặp vô hạn.
+  const initialCenter = useMemo(
     () =>
       selfLat != null && selfLng != null
-        ? { latitude: selfLat, longitude: selfLng, latitudeDelta: 0.045, longitudeDelta: 0.045 }
+        ? { lat: selfLat, lng: selfLng }
         : otherLat != null && otherLng != null
-          ? { latitude: otherLat, longitude: otherLng, latitudeDelta: 0.045, longitudeDelta: 0.045 }
+          ? { lat: otherLat, lng: otherLng }
           : NGHE_AN,
     [selfLat, selfLng, otherLat, otherLng],
   );
+  const initialZoom = initialCenter === NGHE_AN ? 11 : 14;
 
-  const mapRef = useRef<MapView | null>(null);
-  const regionRef = useRef<Region>(initialRegion);
+  const otherMarker = useMemo<MapMarker | null>(
+    () =>
+      otherLat != null && otherLng != null
+        ? {
+            lat: otherLat,
+            lng: otherLng,
+            label: otherLabel || (target === 'pickup' ? 'Điểm đến' : 'Điểm đón'),
+          }
+        : null,
+    [otherLat, otherLng, otherLabel, target],
+  );
+
+  const mapRef = useRef<LeafletMapHandle>(null);
+  const centerRef = useRef(initialCenter);
   const geocodeTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const geocodeAbort = useRef<AbortController | null>(null);
 
-  const [pin, setPin] = useState<{ lat: number; lng: number }>({
-    lat: initialRegion.latitude,
-    lng: initialRegion.longitude,
-  });
+  const [pin, setPin] = useState<{ lat: number; lng: number }>(initialCenter);
   const [addr, setAddr] = useState<AddrState>({ status: 'loading' });
 
   const [query, setQuery] = useState('');
-  const [results, setResults] = useState<SearchItem[]>([]);
+  const [results, setResults] = useState<PlaceResult[]>([]);
   const [searching, setSearching] = useState(false);
   const searchAbort = useRef<AbortController | null>(null);
 
@@ -139,19 +99,9 @@ export default function MapPickScreen() {
       const ctrl = new AbortController();
       geocodeAbort.current = ctrl;
       try {
-        const url = `${NOMINATIM}/reverse?format=jsonv2&zoom=18&addressdetails=1&lat=${lat}&lon=${lng}`;
-        const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: ctrl.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as NominatimReverse;
-        if (data.error || !data.display_name) throw new Error('no result');
+        const result = await fetchAddress(lat, lng, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        setAddr({
-          status: 'ok',
-          lat,
-          lng,
-          label: buildLabel(data.display_name, data.address),
-          address: data.display_name,
-        });
+        setAddr({ status: 'ok', lat, lng, label: result.label, address: result.address });
       } catch {
         if (!ctrl.signal.aborted) setAddr({ status: 'error' });
       }
@@ -159,31 +109,22 @@ export default function MapPickScreen() {
   }, []);
 
   useEffect(() => {
-    reverseGeocode(initialRegion.latitude, initialRegion.longitude);
+    reverseGeocode(initialCenter.lat, initialCenter.lng);
     return () => {
       if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
       geocodeAbort.current?.abort();
       searchAbort.current?.abort();
     };
-  }, [initialRegion, reverseGeocode]);
+  }, [initialCenter, reverseGeocode]);
 
-  const onRegionChangeComplete = useCallback(
-    (region: Region) => {
-      regionRef.current = region;
-      setPin({ lat: region.latitude, lng: region.longitude });
-      reverseGeocode(region.latitude, region.longitude);
+  const handleMoveEnd = useCallback(
+    (lat: number, lng: number) => {
+      centerRef.current = { lat, lng };
+      setPin({ lat, lng });
+      reverseGeocode(lat, lng);
     },
     [reverseGeocode],
   );
-
-  const changeQuery = (text: string) => {
-    setQuery(text);
-    if (text.trim().length < 2) {
-      searchAbort.current?.abort();
-      setResults([]);
-      setSearching(false);
-    }
-  };
 
   useEffect(() => {
     const q = query.trim();
@@ -194,29 +135,8 @@ export default function MapPickScreen() {
       const ctrl = new AbortController();
       searchAbort.current = ctrl;
       try {
-        const r = regionRef.current;
-        const vb = `${r.longitude - 1.5},${r.latitude + 1.5},${r.longitude + 1.5},${r.latitude - 1.5}`;
-        const url =
-          `${NOMINATIM}/search?format=jsonv2&addressdetails=1&limit=6&countrycodes=vn` +
-          `&viewbox=${encodeURIComponent(vb)}&q=${encodeURIComponent(q)}`;
-        const res = await fetch(url, { headers: NOMINATIM_HEADERS, signal: ctrl.signal });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const data = (await res.json()) as NominatimSearchItem[];
+        const items = await searchPlaces(q, centerRef.current, 6, ctrl.signal);
         if (ctrl.signal.aborted) return;
-        const items: SearchItem[] = data
-          .map((item) => {
-            const lat = Number.parseFloat(item.lat);
-            const lng = Number.parseFloat(item.lon);
-            if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-            return {
-              id: String(item.place_id),
-              label: buildLabel(item.display_name),
-              address: item.display_name,
-              lat,
-              lng,
-            };
-          })
-          .filter((item): item is SearchItem => item !== null);
         setResults(items);
         setSearching(false);
       } catch {
@@ -229,19 +149,22 @@ export default function MapPickScreen() {
     return () => clearTimeout(timer);
   }, [query]);
 
-  const selectResult = (item: SearchItem) => {
+  const changeQuery = (text: string) => {
+    setQuery(text);
+    if (text.trim().length < 2) {
+      searchAbort.current?.abort();
+      setResults([]);
+      setSearching(false);
+    }
+  };
+
+  const selectResult = (item: PlaceResult) => {
     Keyboard.dismiss();
     setQuery(item.label);
     setResults([]);
-    const region: Region = {
-      latitude: item.lat,
-      longitude: item.lng,
-      latitudeDelta: 0.012,
-      longitudeDelta: 0.012,
-    };
-    regionRef.current = region;
+    centerRef.current = { lat: item.lat, lng: item.lng };
     setPin({ lat: item.lat, lng: item.lng });
-    mapRef.current?.animateToRegion(region, 350);
+    mapRef.current?.setView(item.lat, item.lng, 16);
     reverseGeocode(item.lat, item.lng);
   };
 
@@ -328,26 +251,13 @@ export default function MapPickScreen() {
       </View>
 
       <View style={styles.mapArea}>
-        <MapView
+        <LeafletMap
           ref={mapRef}
-          style={StyleSheet.absoluteFill}
-          initialRegion={initialRegion}
-          mapType="standard"
-          onPress={() => {
-            Keyboard.dismiss();
-            setResults([]);
-          }}
-          onRegionChangeComplete={onRegionChangeComplete}
-        >
-          {otherLat != null && otherLng != null ? (
-            <Marker
-              coordinate={{ latitude: otherLat, longitude: otherLng }}
-              anchor={{ x: 0.5, y: 1 }}
-              pinColor={colors.warning}
-              title={otherLabel?.trim() || (target === 'pickup' ? 'Điểm đến' : 'Điểm đón')}
-            />
-          ) : null}
-        </MapView>
+          center={initialCenter}
+          zoom={initialZoom}
+          other={otherMarker}
+          onMoveEnd={handleMoveEnd}
+        />
 
         <View pointerEvents="none" style={styles.pinWrap}>
           <Ionicons name="location" size={46} color={colors.primary} style={styles.pin} />
