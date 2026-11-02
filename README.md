@@ -46,7 +46,7 @@ Bước "Hành trình" của form đặt xe cho phép chọn điểm đón/đế
 
 - **Leaflet + OpenStreetMap** chạy trong WebView (`react-native-webview`, có sẵn trong Expo Go) — không cần API key, hoạt động cả trong Expo Go lẫn bản build store.
   > Lý do không dùng `react-native-maps`/Google Maps: từ SDK 53, **Expo Go đã gỡ key Google Maps** nên tile tải về toàn màu đen (chỉ còn logo) — xem [react-native-maps#5888](https://github.com/react-native-maps/react-native-maps/issues/5888). Muốn quay lại Google Maps phải tạo development build riêng + API key.
-- Ô tìm kiếm địa danh + địa chỉ hiển thị từ **Nominatim (OpenStreetMap)**, tự động chuyển sang **Photon (Komoot)** khi bị 403/429 — cả hai đều không cần API key, cần mạng.
+- Ô tìm kiếm địa danh dùng **Photon (Komoot)** làm chính (kết quả tiếng Việt đúng nghĩa hơn), tự chuyển sang **Nominatim (OpenStreetMap)** khi Photon lỗi/rỗng; tra ngược toạ độ → địa chỉ thì Nominatim trước, Photon dự phòng — cả hai đều không cần API key, tự throttle ~1 req/giây và timeout 8s mỗi lần thử, cần mạng.
 - Di chuyển bản đồ để ghim toạ độ → tự tra địa chỉ → dùng cho tính khoảng cách & giá dự kiến.
 
 ## Giai đoạn sau (chưa làm trong MVP)

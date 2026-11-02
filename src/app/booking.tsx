@@ -63,8 +63,6 @@ export default function BookingScreen() {
 
   const [pickup, setPickup] = useState<TripPoint>(EMPTY_POINT);
   const [dropoff, setDropoff] = useState<TripPoint>(EMPTY_POINT);
-  const [pickupOldWard, setPickupOldWard] = useState('');
-  const [dropoffOldWard, setDropoffOldWard] = useState('');
 
   // Nhận điểm vừa ghim trên bản đồ khi quay lại màn đặt xe
   useFocusEffect(
@@ -170,8 +168,8 @@ export default function BookingScreen() {
     }
     const request = createRequest({
       serviceId: serviceId as ServiceId,
-      pickup: { ...pickup, oldWard: pickupOldWard.trim() || pickup.oldWard },
-      dropoff: { ...dropoff, oldWard: dropoffOldWard.trim() || dropoff.oldWard },
+      pickup,
+      dropoff,
       date: timeOption === 'window' ? date : toIsoDate(new Date()),
       timeOption: timeOption as TimeOption,
       timeWindow: timeOption === 'window' ? timeWindow : undefined,
@@ -351,14 +349,6 @@ export default function BookingScreen() {
               error={errors.pickup}
               onPickOnMap={() => openMapPick('pickup')}
             />
-            <Field
-              label="Xã / phường cũ (nếu địa danh đã sáp nhập)"
-              value={pickupOldWard}
-              onChangeText={setPickupOldWard}
-              placeholder="VD: Xã Nghi Phú (cũ)"
-              hint="Giúp đại lý xác định chính xác vị trí."
-            />
-
             <SectionHeader title="Nhập điểm đến" />
             <PlacePicker
               label="Điểm đến"
@@ -369,13 +359,6 @@ export default function BookingScreen() {
               error={errors.dropoff}
               onPickOnMap={() => openMapPick('dropoff')}
             />
-            <Field
-              label="Xã / phường cũ (nếu địa danh đã sáp nhập)"
-              value={dropoffOldWard}
-              onChangeText={setDropoffOldWard}
-              placeholder="VD: Xã Hải Thành (cũ)"
-            />
-
             <Card style={styles.estimateCard}>
               <Text style={styles.estimateTitle}>Khoảng cách & giá dự kiến</Text>
               {tripInfo ? (
@@ -475,12 +458,12 @@ export default function BookingScreen() {
               ) : null}
               <KeyValue
                 label="Điểm đón"
-                value={`${pickup.label}${pickupOldWard ? ` (${pickupOldWard})` : ''}`}
+                value={`${pickup.label}${pickup.oldWard ? ` (${pickup.oldWard})` : ''}`}
                 icon="location-outline"
               />
               <KeyValue
                 label="Điểm đến"
-                value={`${dropoff.label}${dropoffOldWard ? ` (${dropoffOldWard})` : ''}`}
+                value={`${dropoff.label}${dropoff.oldWard ? ` (${dropoff.oldWard})` : ''}`}
                 icon="flag-outline"
               />
               <KeyValue

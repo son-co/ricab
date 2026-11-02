@@ -89,7 +89,12 @@ export default function MapPickScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [searching, setSearching] = useState(false);
+  /** Từ khoá đã tìm xong — để hiện "không tìm thấy" đúng với từ khoá hiện tại. */
+  const [searchedQ, setSearchedQ] = useState<string | null>(null);
   const searchAbort = useRef<AbortController | null>(null);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** Nhãn vừa chọn trong danh sách — lần chọn này không cần tự tìm lại. */
+  const pickedRef = useRef<string | null>(null);
 
   const reverseGeocode = useCallback((lat: number, lng: number) => {
     if (geocodeTimer.current) clearTimeout(geocodeTimer.current);
@@ -126,42 +131,80 @@ export default function MapPickScreen() {
     [reverseGeocode],
   );
 
+  const doSearch = useCallback(async (q: string) => {
+    setSearching(true);
+    searchAbort.current?.abort();
+    const ctrl = new AbortController();
+    searchAbort.current = ctrl;
+    try {
+      const items = await searchPlaces(q, centerRef.current, 6, ctrl.signal);
+      if (ctrl.signal.aborted) return;
+      setResults(items);
+      setSearchedQ(q);
+      setSearching(false);
+    } catch {
+      if (!ctrl.signal.aborted) {
+        setResults([]);
+        setSearchedQ(q);
+        setSearching(false);
+      }
+    }
+  }, []);
+
+  // Tự tìm sau 500ms ngừng gõ; vừa chọn xong một kết quả thì bỏ qua lần tìm trùng.
   useEffect(() => {
+    if (pickedRef.current !== null) {
+      const samePick = pickedRef.current === query.trim();
+      pickedRef.current = null;
+      if (samePick) return;
+    }
     const q = query.trim();
     if (q.length < 2) return;
-    const timer = setTimeout(async () => {
-      setSearching(true);
-      searchAbort.current?.abort();
-      const ctrl = new AbortController();
-      searchAbort.current = ctrl;
-      try {
-        const items = await searchPlaces(q, centerRef.current, 6, ctrl.signal);
-        if (ctrl.signal.aborted) return;
-        setResults(items);
-        setSearching(false);
-      } catch {
-        if (!ctrl.signal.aborted) {
-          setResults([]);
-          setSearching(false);
-        }
-      }
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    searchTimer.current = setTimeout(() => {
+      searchTimer.current = null;
+      doSearch(q);
     }, 500);
-    return () => clearTimeout(timer);
-  }, [query]);
+    return () => {
+      if (searchTimer.current) {
+        clearTimeout(searchTimer.current);
+        searchTimer.current = null;
+      }
+    };
+  }, [query, doSearch]);
 
   const changeQuery = (text: string) => {
     setQuery(text);
     if (text.trim().length < 2) {
+      if (searchTimer.current) {
+        clearTimeout(searchTimer.current);
+        searchTimer.current = null;
+      }
       searchAbort.current?.abort();
       setResults([]);
+      setSearchedQ(null);
       setSearching(false);
     }
   };
 
+  /** Bấm nút "search" trên bàn phím → tìm ngay, không chờ debounce. */
+  const submitSearch = () => {
+    const q = query.trim();
+    if (q.length < 2) return;
+    if (searchTimer.current) {
+      clearTimeout(searchTimer.current);
+      searchTimer.current = null;
+    }
+    Keyboard.dismiss();
+    doSearch(q);
+  };
+
   const selectResult = (item: PlaceResult) => {
     Keyboard.dismiss();
+    pickedRef.current = item.label;
     setQuery(item.label);
     setResults([]);
+    setSearchedQ(null);
     centerRef.current = { lat: item.lat, lng: item.lng };
     setPin({ lat: item.lat, lng: item.lng });
     mapRef.current?.setView(item.lat, item.lng, 16);
@@ -208,6 +251,7 @@ export default function MapPickScreen() {
             placeholderTextColor={colors.textFaint}
             style={styles.searchInput}
             returnKeyType="search"
+            onSubmitEditing={submitSearch}
           />
           {query ? (
             <Pressable onPress={() => changeQuery('')} hitSlop={10}>
@@ -219,6 +263,15 @@ export default function MapPickScreen() {
             </Pressable>
           ) : null}
         </View>
+
+        {searchedQ === query.trim() && !searching && results.length === 0 && query.trim().length >= 2 ? (
+          <View style={styles.resultsCard}>
+            <View style={styles.emptyRow}>
+              <Ionicons name="search-outline" size={16} color={colors.textFaint} />
+              <Text style={styles.emptyText}>Không tìm thấy địa danh nào cho “{query.trim()}”</Text>
+            </View>
+          </View>
+        ) : null}
 
         {results.length > 0 ? (
           <View style={styles.resultsCard}>
@@ -363,6 +416,13 @@ const styles = StyleSheet.create({
   resultBody: { flex: 1 },
   resultLabel: { fontSize: fontSize.sm, fontWeight: '700', color: colors.text },
   resultAddress: { fontSize: fontSize.xs, color: colors.textMuted, marginTop: 2 },
+  emptyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space(2),
+    padding: space(3.5),
+  },
+  emptyText: { flex: 1, fontSize: fontSize.xs, color: colors.textMuted },
 
   mapArea: { flex: 1, overflow: 'hidden' },
   pinWrap: {
